@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { FileUpload } from "@/components/ui/file-upload";
 import type {
   ContentPost,
   ContentPlatform,
@@ -22,6 +23,7 @@ export interface PostFormData {
   hashtags: string[];
   caption: string;
   notes: string;
+  media_urls: string[];
 }
 
 interface PostFormProps {
@@ -82,6 +84,7 @@ export function PostForm({ post, projects, onSubmit, onCancel }: PostFormProps) 
     hashtags: post?.hashtags ?? [],
     caption: post?.caption ?? "",
     notes: post?.notes ?? "",
+    media_urls: post?.media_urls ?? [],
   });
   const [hashtagInput, setHashtagInput] = useState("");
 
@@ -228,6 +231,20 @@ export function PostForm({ post, projects, onSubmit, onCancel }: PostFormProps) 
             ))}
           </div>
         )}
+      </div>
+
+      {/* Media upload */}
+      <div>
+        <label className="mb-1 block text-sm font-medium">Медиа</label>
+        <FileUpload
+          bucket="media"
+          accept="image/*,video/*"
+          multiple
+          maxFiles={10}
+          existingUrls={form.media_urls}
+          onUpload={(urls) => update("media_urls", [...form.media_urls, ...urls])}
+          onRemove={(url) => update("media_urls", form.media_urls.filter((u) => u !== url))}
+        />
       </div>
 
       {/* Notes */}

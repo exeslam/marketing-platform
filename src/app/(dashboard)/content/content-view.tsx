@@ -182,7 +182,7 @@ export function ContentView({ posts, projects }: ContentViewProps) {
       published_at: null,
       author_id: null,
       reviewer_id: null,
-      media_urls: [],
+      media_urls: data.media_urls,
       thumbnail_url: null,
       hashtags: data.hashtags,
       caption: data.caption || null,
@@ -210,6 +210,7 @@ export function ContentView({ posts, projects }: ContentViewProps) {
       hashtags: data.hashtags,
       caption: data.caption || null,
       notes: data.notes || null,
+      media_urls: data.media_urls,
     });
     closeModal();
   }

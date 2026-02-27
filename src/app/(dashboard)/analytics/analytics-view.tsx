@@ -17,7 +17,9 @@ import {
   Megaphone,
   PiggyBank,
 } from "lucide-react";
+import { Download } from "lucide-react";
 import { cn, formatKZT, formatNumber } from "@/lib/utils";
+import { exportToCSV } from "@/lib/export-csv";
 import { Topbar } from "@/components/layout/topbar";
 import { KpiCard } from "@/components/ui/kpi-card";
 import type { BudgetChannel } from "@/types/database";
@@ -125,10 +127,29 @@ export function AnalyticsView({
       <Topbar title="Аналитика бюджета" />
 
       <div className="p-4 md:p-6">
-        {/* Month label */}
-        <p className="mb-4 text-sm text-[var(--muted-foreground)]">
-          Данные за: <span className="font-medium capitalize">{monthLabel}</span>
-        </p>
+        {/* Month label + export */}
+        <div className="mb-4 flex items-center justify-between">
+          <p className="text-sm text-[var(--muted-foreground)]">
+            Данные за: <span className="font-medium capitalize">{monthLabel}</span>
+          </p>
+          <button
+            onClick={() => {
+              const headers = ["Проект", "Факт (KZT)", "План (KZT)", "Использовано (%)"];
+              const rows = perProjectBreakdown.map((p) => [
+                p.projectName,
+                String(p.actual),
+                String(p.planned),
+                p.planned > 0 ? String(Math.round((p.actual / p.planned) * 100)) : "0",
+              ]);
+              rows.push(["ИТОГО", String(totalSpend), String(totalPlanned), String(budgetUsagePercent)]);
+              exportToCSV(`budget-${currentMonth}`, headers, rows);
+            }}
+            className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors hover:bg-[var(--muted)]"
+          >
+            <Download className="h-4 w-4" />
+            CSV
+          </button>
+        </div>
 
         {/* ── KPI Cards ──────────────────────────────────────────── */}
         <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">

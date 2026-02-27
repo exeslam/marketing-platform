@@ -19,6 +19,11 @@ import {
   addProjectMember,
   removeProjectMember,
   markNotificationRead,
+  markAllNotificationsRead,
+  createNotification,
+  getTaskComments,
+  createTaskComment,
+  deleteTaskComment,
   logActivity,
   getCurrentUser,
 } from "@/lib/supabase/queries";
@@ -62,6 +67,16 @@ export async function createTaskAction(
       entity_id: result.id,
       details: { title: task.title },
     });
+    // Notify assignee
+    if (task.assignee_id && task.assignee_id !== userId) {
+      await createNotification(
+        task.assignee_id,
+        "Вам назначена задача",
+        task.title,
+        "task_assigned",
+        "/tasks"
+      );
+    }
     revalidatePath("/tasks");
     return result;
   });
@@ -81,6 +96,16 @@ export async function updateTaskAction(
       entity_id: id,
       details: { title: result.title },
     });
+    // Notify new assignee
+    if (updates.assignee_id && updates.assignee_id !== userId) {
+      await createNotification(
+        updates.assignee_id,
+        "Вам назначена задача",
+        result.title,
+        "task_assigned",
+        "/tasks"
+      );
+    }
     revalidatePath("/tasks");
     return result;
   });
@@ -258,6 +283,12 @@ export async function markNotificationReadAction(id: string) {
   });
 }
 
+export async function markAllNotificationsReadAction() {
+  return withUser(async (userId) => {
+    await markAllNotificationsRead(userId);
+  });
+}
+
 // ── User Management ──────────────────────────────────────────────────
 
 export async function updateUserRoleAction(userId: string, role: string) {
@@ -340,5 +371,28 @@ export async function removeUserFromProjectAction(userId: string, projectId: str
     });
     revalidatePath("/settings/team");
     revalidatePath(`/projects/${projectId}`);
+  });
+}
+
+// ── Task Comments ────────────────────────────────────────────────────
+
+export async function getTaskCommentsAction(taskId: string) {
+  return withUser(async () => {
+    return await getTaskComments(taskId);
+  });
+}
+
+export async function createTaskCommentAction(taskId: string, content: string) {
+  return withUser(async (userId) => {
+    const comment = await createTaskComment(taskId, userId, content);
+    revalidatePath("/tasks");
+    return comment;
+  });
+}
+
+export async function deleteTaskCommentAction(commentId: string) {
+  return withUser(async () => {
+    await deleteTaskComment(commentId);
+    revalidatePath("/tasks");
   });
 }

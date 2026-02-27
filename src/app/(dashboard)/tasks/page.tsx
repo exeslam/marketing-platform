@@ -3,16 +3,18 @@ import {
   getTaskColumns,
   getProjects,
   getAllTasks,
+  getCurrentUser,
 } from "@/lib/supabase/queries";
 import { TasksBoard } from "./tasks-board";
 
 const DEFAULT_BOARD_ID = "b1111111-1111-1111-1111-111111111111";
 
 export default async function TasksPage() {
-  const [projects, allTasks, columns] = await Promise.all([
+  const [projects, allTasks, columns, user] = await Promise.all([
     getProjects(),
     getAllTasks(),
     getTaskColumns(DEFAULT_BOARD_ID),
+    getCurrentUser(),
   ]);
 
   // Build a map: project_id -> { name, color }
@@ -43,6 +45,7 @@ export default async function TasksPage() {
         tasksByColumn={tasksByColumn}
         projectMap={projectMap}
         projects={projects}
+        currentUserId={user?.id ?? ""}
       />
     </div>
   );

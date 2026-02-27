@@ -2,10 +2,10 @@
 
 import { useState, useEffect, useRef, useTransition, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Search, Bell, Menu, Check, CheckSquare, FolderKanban, FileText } from "lucide-react";
+import { Search, Bell, Menu, Check, CheckCheck, CheckSquare, FolderKanban, FileText, X } from "lucide-react";
 import { cn, formatDate } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
-import { markNotificationReadAction, searchAction } from "@/lib/actions";
+import { markNotificationReadAction, markAllNotificationsReadAction, searchAction } from "@/lib/actions";
 
 interface Notification {
   id: string;
@@ -39,23 +39,51 @@ export function Topbar({ title }: TopbarProps) {
   const searchRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  // Load notifications on mount
+  // Load notifications + realtime subscription
   useEffect(() => {
+    const supabase = createClient();
+    let userId: string | null = null;
+
     async function loadNotifications() {
-      const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+      userId = user.id;
 
       const { data } = await supabase
         .from("notifications")
         .select("*")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
-        .limit(20);
+        .limit(30);
 
       if (data) setNotifications(data as Notification[]);
+
+      // Subscribe to new notifications via realtime
+      const channel = supabase
+        .channel("notifications")
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "notifications",
+            filter: `user_id=eq.${user.id}`,
+          },
+          (payload) => {
+            setNotifications((prev) => [payload.new as Notification, ...prev].slice(0, 30));
+          }
+        )
+        .subscribe();
+
+      return channel;
     }
-    loadNotifications();
+
+    let channel: ReturnType<typeof supabase.channel> | undefined;
+    loadNotifications().then((ch) => { channel = ch; });
+
+    return () => {
+      if (channel) supabase.removeChannel(channel);
+    };
   }, []);
 
   const unreadCount = notifications.filter((n) => !n.is_read).length;
@@ -65,6 +93,19 @@ export function Topbar({ title }: TopbarProps) {
     startTransition(async () => {
       await markNotificationReadAction(id);
     });
+  }
+
+  function markAllRead() {
+    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+    startTransition(async () => {
+      await markAllNotificationsReadAction();
+    });
+  }
+
+  function handleNotificationClick(n: Notification) {
+    if (!n.is_read) markRead(n.id);
+    setBellOpen(false);
+    if (n.link) router.push(n.link);
   }
 
   // Debounced search
@@ -130,6 +171,14 @@ export function Topbar({ title }: TopbarProps) {
 
   const hasResults = searchResults && (searchResults.tasks.length > 0 || searchResults.projects.length > 0 || searchResults.posts.length > 0);
 
+  const notificationTypeIcon: Record<string, string> = {
+    task_assigned: "📋",
+    task_due: "⏰",
+    content_review: "📝",
+    budget_alert: "💰",
+    team_invite: "👥",
+  };
+
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-[var(--card)] px-4 md:px-6">
       <button
@@ -142,7 +191,84 @@ export function Topbar({ title }: TopbarProps) {
       <h1 className="text-xl font-semibold">{title}</h1>
       <div className="flex-1" />
 
-      {/* Search */}
+      {/* Mobile search button */}
+      <button
+        onClick={() => setSearchOpen(true)}
+        className="rounded-lg p-2 hover:bg-[var(--muted)] md:hidden"
+      >
+        <Search className="h-5 w-5" />
+      </button>
+
+      {/* Mobile search overlay */}
+      {searchOpen && (
+        <div className="fixed inset-0 z-50 bg-[var(--card)] p-4 md:hidden">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted-foreground)]" />
+              <input
+                type="text"
+                placeholder="Поиск..."
+                autoFocus
+                value={searchQuery}
+                onChange={(e) => handleSearchInput(e.target.value)}
+                className="w-full rounded-lg border bg-[var(--muted)] py-2.5 pl-9 pr-3 text-sm outline-none focus:border-primary"
+              />
+            </div>
+            <button
+              onClick={() => { setSearchOpen(false); setSearchQuery(""); setSearchResults(null); }}
+              className="rounded-lg p-2 hover:bg-[var(--muted)]"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          {searchQuery.length >= 2 && (
+            <div className="mt-2 max-h-[calc(100vh-80px)] overflow-y-auto">
+              {!searchResults && <p className="py-4 text-center text-sm text-[var(--muted-foreground)]">Поиск...</p>}
+              {searchResults && !hasResults && <p className="py-4 text-center text-sm text-[var(--muted-foreground)]">Ничего не найдено</p>}
+              {hasResults && (
+                <div className="space-y-1 py-1">
+                  {searchResults.projects.length > 0 && (
+                    <>
+                      <p className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Проекты</p>
+                      {searchResults.projects.map((p) => (
+                        <button key={p.id} onClick={() => navigateTo(`/projects/${p.id}`)} className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2.5 text-sm hover:bg-[var(--muted)]">
+                          <FolderKanban className="h-4 w-4 shrink-0 text-[var(--muted-foreground)]" />
+                          <div className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: p.color }} />
+                          <span className="truncate">{p.name}</span>
+                        </button>
+                      ))}
+                    </>
+                  )}
+                  {searchResults.tasks.length > 0 && (
+                    <>
+                      <p className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Задачи</p>
+                      {searchResults.tasks.map((t) => (
+                        <button key={t.id} onClick={() => navigateTo("/tasks")} className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2.5 text-sm hover:bg-[var(--muted)]">
+                          <CheckSquare className="h-4 w-4 shrink-0 text-[var(--muted-foreground)]" />
+                          <span className="truncate">{t.title}</span>
+                        </button>
+                      ))}
+                    </>
+                  )}
+                  {searchResults.posts.length > 0 && (
+                    <>
+                      <p className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Контент</p>
+                      {searchResults.posts.map((p) => (
+                        <button key={p.id} onClick={() => navigateTo("/content")} className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2.5 text-sm hover:bg-[var(--muted)]">
+                          <FileText className="h-4 w-4 shrink-0 text-[var(--muted-foreground)]" />
+                          <span className="truncate">{p.title ?? "Без названия"}</span>
+                        </button>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Desktop search */}
       <div className="hidden items-center md:flex" ref={searchRef}>
         {searchOpen ? (
           <div className="relative">
@@ -225,36 +351,62 @@ export function Topbar({ title }: TopbarProps) {
         </button>
 
         {bellOpen && (
-          <div className="absolute right-0 top-12 w-80 rounded-xl border bg-[var(--card)] shadow-xl">
+          <div className="absolute right-0 top-12 w-80 rounded-xl border bg-[var(--card)] shadow-xl sm:w-96">
             <div className="flex items-center justify-between border-b px-4 py-3">
               <h3 className="text-sm font-semibold">Уведомления</h3>
-              {unreadCount > 0 && (
-                <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-600">
-                  {unreadCount} новых
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                {unreadCount > 0 && (
+                  <>
+                    <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-600">
+                      {unreadCount} новых
+                    </span>
+                    <button
+                      onClick={markAllRead}
+                      className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-primary hover:bg-[var(--muted)]"
+                      title="Прочитать все"
+                    >
+                      <CheckCheck className="h-3.5 w-3.5" />
+                      Все
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
 
-            <div className="max-h-[320px] overflow-y-auto">
+            <div className="max-h-[400px] overflow-y-auto">
               {notifications.length === 0 ? (
-                <p className="py-8 text-center text-sm text-[var(--muted-foreground)]">Нет уведомлений</p>
+                <div className="py-12 text-center">
+                  <Bell className="mx-auto mb-2 h-8 w-8 text-[var(--muted-foreground)] opacity-40" />
+                  <p className="text-sm text-[var(--muted-foreground)]">Нет уведомлений</p>
+                </div>
               ) : (
                 notifications.map((n) => (
-                  <div
+                  <button
                     key={n.id}
-                    className={cn("flex items-start gap-3 border-b px-4 py-3 last:border-0", !n.is_read && "bg-primary/5")}
+                    onClick={() => handleNotificationClick(n)}
+                    className={cn(
+                      "flex w-full items-start gap-3 border-b px-4 py-3 text-left transition-colors last:border-0 hover:bg-[var(--muted)]",
+                      !n.is_read && "bg-primary/5"
+                    )}
                   >
-                    <div className="flex-1">
-                      <p className={cn("text-sm", !n.is_read && "font-medium")}>{n.title}</p>
-                      {n.body && <p className="mt-0.5 text-xs text-[var(--muted-foreground)]">{n.body}</p>}
+                    <span className="mt-0.5 text-base leading-none">
+                      {notificationTypeIcon[n.type] ?? "🔔"}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className={cn("truncate text-sm", !n.is_read && "font-medium")}>{n.title}</p>
+                      {n.body && <p className="mt-0.5 truncate text-xs text-[var(--muted-foreground)]">{n.body}</p>}
                       <p className="mt-1 text-[10px] text-[var(--muted-foreground)]">{formatDate(n.created_at)}</p>
                     </div>
                     {!n.is_read && (
-                      <button onClick={() => markRead(n.id)} className="shrink-0 rounded p-1 hover:bg-[var(--muted)]" title="Прочитано">
+                      <span
+                        onClick={(e) => { e.stopPropagation(); markRead(n.id); }}
+                        className="mt-1 shrink-0 rounded p-1 hover:bg-[var(--border)]"
+                        title="Прочитано"
+                      >
                         <Check className="h-3.5 w-3.5 text-primary" />
-                      </button>
+                      </span>
                     )}
-                  </div>
+                  </button>
                 ))
               )}
             </div>

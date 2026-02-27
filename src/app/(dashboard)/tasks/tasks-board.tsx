@@ -30,6 +30,7 @@ import {
   Trash2,
   GripVertical,
   X,
+  Download,
 } from "lucide-react";
 import {
   cn,
@@ -40,7 +41,9 @@ import {
 } from "@/lib/utils";
 import type { Task, TaskColumn, Project } from "@/types/database";
 import { Modal } from "@/components/ui/modal";
+import { exportToCSV } from "@/lib/export-csv";
 import { TaskForm, type TaskFormData } from "./task-form";
+import { TaskComments } from "./task-comments";
 import {
   createTaskAction,
   updateTaskAction,
@@ -55,6 +58,7 @@ interface TasksBoardProps {
   tasksByColumn: Record<string, Task[]>;
   projectMap: Record<string, { name: string; color: string }>;
   projects: Project[];
+  currentUserId: string;
 }
 
 const priorityBadgeStyles: Record<string, string> = {
@@ -205,7 +209,7 @@ const DroppableColumn = memo(function DroppableColumn({ column, tasks, projectMa
 
 // ── Main Board ──────────────────────────────────────────────────────
 
-export function TasksBoard({ columns, tasksByColumn: initialTasksByColumn, projectMap, projects }: TasksBoardProps) {
+export function TasksBoard({ columns, tasksByColumn: initialTasksByColumn, projectMap, projects, currentUserId }: TasksBoardProps) {
   const [viewMode, setViewMode] = useState<ViewMode>("kanban");
   const [modalMode, setModalMode] = useState<"create" | "edit" | "delete" | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -355,6 +359,26 @@ export function TasksBoard({ columns, tasksByColumn: initialTasksByColumn, proje
               <X className="h-4 w-4" />
             </button>
           )}
+          <button
+            onClick={() => {
+              const allTasks = Object.values(localTasksByColumn).flat();
+              const colMap: Record<string, string> = {};
+              for (const c of columns) colMap[c.id] = c.name;
+              exportToCSV("tasks", ["Задача", "Статус", "Приоритет", "Категория", "Проект", "Дедлайн"], allTasks.map((t) => [
+                t.title,
+                colMap[t.column_id] ?? "",
+                getTaskPriorityLabel(t.priority),
+                t.category ? getTaskCategoryLabel(t.category) : "",
+                projectMap[t.project_id]?.name ?? "",
+                t.due_date ? new Date(t.due_date).toLocaleDateString("ru-RU") : "",
+              ]));
+            }}
+            className="flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm hover:bg-[var(--muted)]"
+            title="Экспорт CSV"
+          >
+            <Download className="h-4 w-4" />
+            <span className="hidden sm:inline">CSV</span>
+          </button>
           <button onClick={() => openCreate()} className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark"><Plus className="h-4 w-4" /> Новая задача</button>
         </div>
       </div>
@@ -449,7 +473,15 @@ export function TasksBoard({ columns, tasksByColumn: initialTasksByColumn, proje
         <TaskForm columns={columns} projects={projects} defaultColumnId={defaultColumnId} onSubmit={handleCreate} onCancel={closeModal} />
       </Modal>
       <Modal open={modalMode === "edit"} onClose={closeModal} title="Редактировать задачу">
-        {selectedTask && <TaskForm task={selectedTask} columns={columns} projects={projects} onSubmit={handleUpdate} onCancel={closeModal} />}
+        {selectedTask && (
+          <div className="space-y-6">
+            <TaskForm task={selectedTask} columns={columns} projects={projects} onSubmit={handleUpdate} onCancel={closeModal} />
+            <div>
+              <h4 className="mb-3 text-sm font-semibold">Комментарии</h4>
+              <TaskComments taskId={selectedTask.id} currentUserId={currentUserId} />
+            </div>
+          </div>
+        )}
       </Modal>
       <Modal open={modalMode === "delete"} onClose={closeModal} title="Удалить задачу">
         {selectedTask && (

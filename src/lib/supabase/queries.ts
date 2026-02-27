@@ -17,6 +17,7 @@ import type {
   AdCampaign,
   AdMetricsDaily,
   Notification,
+  TaskComment,
 } from "@/types/database";
 
 // ── Auth & Profile ──────────────────────────────────────────────────
@@ -304,6 +305,41 @@ export async function getTaskCommentCount(taskId: string): Promise<number> {
   return count ?? 0;
 }
 
+export async function getTaskComments(taskId: string): Promise<TaskComment[]> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("task_comments")
+    .select("*, author:profiles!task_comments_author_id_fkey(*)")
+    .eq("task_id", taskId)
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as TaskComment[];
+}
+
+export async function createTaskComment(
+  taskId: string,
+  authorId: string,
+  content: string
+): Promise<TaskComment> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("task_comments")
+    .insert({ task_id: taskId, author_id: authorId, content })
+    .select("*, author:profiles!task_comments_author_id_fkey(*)")
+    .single();
+  if (error) throw error;
+  return data as TaskComment;
+}
+
+export async function deleteTaskComment(id: string) {
+  const supabase = createAdminClient();
+  const { error } = await supabase
+    .from("task_comments")
+    .delete()
+    .eq("id", id);
+  if (error) throw error;
+}
+
 // ── Content Posts ───────────────────────────────────────────────────
 
 export async function getContentPosts(filters?: {
@@ -530,6 +566,30 @@ export async function markNotificationRead(id: string) {
     .from("notifications")
     .update({ is_read: true })
     .eq("id", id);
+  if (error) throw error;
+}
+
+export async function markAllNotificationsRead(userId: string) {
+  const supabase = createAdminClient();
+  const { error } = await supabase
+    .from("notifications")
+    .update({ is_read: true })
+    .eq("user_id", userId)
+    .eq("is_read", false);
+  if (error) throw error;
+}
+
+export async function createNotification(
+  userId: string,
+  title: string,
+  body: string | null,
+  type: string,
+  link: string | null = null
+) {
+  const supabase = createAdminClient();
+  const { error } = await supabase
+    .from("notifications")
+    .insert({ user_id: userId, title, body, type, link, is_read: false });
   if (error) throw error;
 }
 

@@ -3,9 +3,10 @@
 import { useState } from "react";
 import { Loader2, ArrowLeft } from "lucide-react";
 import Link from "next/link";
-import { cn, getInitials } from "@/lib/utils";
+import { getInitials } from "@/lib/utils";
 import type { Profile } from "@/types/database";
 import { updateProfileAction } from "@/lib/actions";
+import { AvatarUpload } from "@/components/ui/file-upload";
 
 export function ProfileForm({ user }: { user: Profile }) {
   const [loading, setLoading] = useState(false);
@@ -59,15 +60,12 @@ export function ProfileForm({ user }: { user: Profile }) {
         <ArrowLeft className="h-4 w-4" /> Настройки
       </Link>
 
-      {/* Avatar preview */}
+      {/* Avatar upload */}
       <div className="mb-6 flex items-center gap-4">
-        {form.avatar_url ? (
-          <img src={form.avatar_url} alt={form.full_name} className="h-16 w-16 rounded-full object-cover" />
-        ) : (
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-xl font-bold text-primary">
-            {getInitials(form.full_name)}
-          </div>
-        )}
+        <AvatarUpload
+          currentUrl={form.avatar_url || null}
+          onUpload={(url) => { update("avatar_url", url); setSaved(false); }}
+        />
         <div>
           <h2 className="text-lg font-semibold">{form.full_name}</h2>
           <p className="text-sm text-[var(--muted-foreground)]">{user.email}</p>
@@ -105,10 +103,6 @@ export function ProfileForm({ user }: { user: Profile }) {
               <input className={inputCls} value={form.telegram_username} onChange={(e) => update("telegram_username", e.target.value)} placeholder="@username" />
             </div>
 
-            <div>
-              <label className="mb-1 block text-sm font-medium">URL аватара</label>
-              <input className={inputCls} value={form.avatar_url} onChange={(e) => update("avatar_url", e.target.value)} placeholder="https://..." />
-            </div>
           </div>
         </div>
 
