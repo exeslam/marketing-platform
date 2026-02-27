@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { createAdminClient } from "@/lib/supabase/server";
 import {
   createTask,
   updateTask,
@@ -24,6 +25,9 @@ import {
   getTaskComments,
   createTaskComment,
   deleteTaskComment,
+  upsertAdPlatformConnection,
+  disconnectAdPlatform,
+  updateCampaignTags,
   logActivity,
   getCurrentUser,
 } from "@/lib/supabase/queries";
@@ -46,8 +50,14 @@ async function withUser<T>(fn: (userId: string) => Promise<T>): Promise<ActionRe
     if (!user) return { success: false, error: "Не авторизован" };
     const data = await fn(user.id);
     return { success: true, data };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Неизвестная ошибка";
+  } catch (err: unknown) {
+    console.error("Action error:", err);
+    const message =
+      err instanceof Error
+        ? err.message
+        : typeof err === "object" && err !== null && "message" in err
+          ? String((err as { message: unknown }).message)
+          : String(err);
     return { success: false, error: message };
   }
 }
@@ -359,6 +369,28 @@ export async function addUserToProjectAction(userId: string, projectId: string, 
   });
 }
 
+export async function deleteUserAction(userId: string) {
+  return withUser(async (currentUserId) => {
+    const user = await getCurrentUser();
+    if (user?.role !== "admin") throw new Error("Только админ может удалять пользователей");
+    if (userId === currentUserId) throw new Error("Нельзя удалить себя");
+    // Delete profile (cascade will remove project_members, etc.)
+    const supabase = createAdminClient();
+    const { error: profileError } = await supabase.from("profiles").delete().eq("id", userId);
+    if (profileError) throw profileError;
+    // Delete from Supabase Auth
+    const { error: authError } = await supabase.auth.admin.deleteUser(userId);
+    if (authError) throw authError;
+    await logActivity({
+      user_id: currentUserId,
+      action: "deleted_user",
+      entity_type: "profile",
+      entity_id: userId,
+    });
+    revalidatePath("/settings/team");
+  });
+}
+
 export async function removeUserFromProjectAction(userId: string, projectId: string) {
   return withUser(async (currentUserId) => {
     await removeProjectMember(projectId, userId);
@@ -394,5 +426,93 @@ export async function deleteTaskCommentAction(commentId: string) {
   return withUser(async () => {
     await deleteTaskComment(commentId);
     revalidatePath("/tasks");
+  });
+}
+
+// ── Ad Integrations ──────────────────────────────────────────────────
+
+export async function connectPlatformAction(
+  projectId: string,
+  platform: "meta" | "google",
+  accountId: string,
+  accountName?: string
+) {
+  return withUser(async (userId) => {
+    const user = await getCurrentUser();
+    if (!user || !["admin", "manager"].includes(user.role)) {
+      throw new Error("Недостаточно прав");
+    }
+    const connection = await upsertAdPlatformConnection(projectId, platform, accountId, accountName);
+    await logActivity({
+      user_id: userId,
+      project_id: projectId,
+      action: "connected_platform",
+      entity_type: "ad_platform",
+      entity_id: connection.id,
+      details: { platform, accountId },
+    });
+    revalidatePath("/settings/integrations");
+    revalidatePath("/ads");
+    return connection;
+  });
+}
+
+export async function disconnectPlatformAction(
+  projectId: string,
+  platform: "meta" | "google"
+) {
+  return withUser(async (userId) => {
+    const user = await getCurrentUser();
+    if (!user || !["admin", "manager"].includes(user.role)) {
+      throw new Error("Недостаточно прав");
+    }
+    await disconnectAdPlatform(projectId, platform);
+    await logActivity({
+      user_id: userId,
+      project_id: projectId,
+      action: "disconnected_platform",
+      entity_type: "ad_platform",
+      entity_id: projectId,
+      details: { platform },
+    });
+    revalidatePath("/settings/integrations");
+    revalidatePath("/ads");
+  });
+}
+
+export async function syncAdsAction(projectId: string, platform?: "meta" | "google") {
+  return withUser(async (userId) => {
+    const user = await getCurrentUser();
+    if (!user || !["admin", "manager"].includes(user.role)) {
+      throw new Error("Недостаточно прав");
+    }
+    // Dynamic import to avoid loading SDK at build time
+    const { syncMetaAds, syncGoogleAds, syncAllPlatforms } = await import("@/lib/ads/sync");
+    let results;
+    if (platform === "meta") results = [await syncMetaAds(projectId)];
+    else if (platform === "google") results = [await syncGoogleAds(projectId)];
+    else results = await syncAllPlatforms(projectId);
+
+    await logActivity({
+      user_id: userId,
+      project_id: projectId,
+      action: "synced_ads",
+      entity_type: "ad_platform",
+      entity_id: projectId,
+      details: { results },
+    });
+    revalidatePath("/ads");
+    revalidatePath("/analytics");
+    return results;
+  });
+}
+
+// ── Campaign Tags ────────────────────────────────────────────────────
+
+export async function updateCampaignTagsAction(campaignId: string, tags: string[]) {
+  return withUser(async () => {
+    const result = await updateCampaignTags(campaignId, tags);
+    revalidatePath("/ads");
+    return result;
   });
 }

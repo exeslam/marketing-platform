@@ -11,6 +11,7 @@ import {
   CheckSquare,
   BarChart3,
   Calendar,
+  Megaphone,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -44,6 +45,11 @@ const navigation = [
     name: "Контент",
     href: "/content",
     icon: Calendar,
+  },
+  {
+    name: "Реклама",
+    href: "/ads",
+    icon: Megaphone,
   },
 ];
 

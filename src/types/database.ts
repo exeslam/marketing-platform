@@ -171,6 +171,7 @@ export interface AdCampaign {
   lifetime_budget_kzt: number | null;
   start_date: string | null;
   end_date: string | null;
+  tags?: string[];
   created_at: string;
   updated_at: string;
 }
@@ -250,4 +251,14 @@ export interface Notification {
   link: string | null;
   is_read: boolean;
   created_at: string;
+}
+
+export interface TelegramSubscriber {
+  id: string;
+  user_id: string | null;
+  telegram_username: string;
+  chat_id: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }

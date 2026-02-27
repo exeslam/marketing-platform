@@ -18,6 +18,7 @@ import type {
   AdMetricsDaily,
   Notification,
   TaskComment,
+  AdPlatformConnection,
 } from "@/types/database";
 
 // ── Auth & Profile ──────────────────────────────────────────────────
@@ -111,6 +112,7 @@ export async function updateProject(
 
 export async function deleteProject(id: string) {
   const supabase = createAdminClient();
+  // All related tables have ON DELETE CASCADE, so just delete the project
   const { error } = await supabase.from("projects").delete().eq("id", id);
   if (error) throw error;
 }
@@ -463,7 +465,19 @@ export async function getAdCampaigns(projectId?: string): Promise<AdCampaign[]> 
   if (projectId) query = query.eq("project_id", projectId);
   const { data, error } = await query;
   if (error) throw error;
-  return (data ?? []) as AdCampaign[];
+  return (data ?? []).map((c: Record<string, unknown>) => ({ ...c, tags: c.tags ?? [] })) as AdCampaign[];
+}
+
+export async function updateCampaignTags(campaignId: string, tags: string[]) {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("ad_campaigns")
+    .update({ tags })
+    .eq("id", campaignId)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
 }
 
 export async function getAdMetrics(filters?: {
@@ -485,11 +499,40 @@ export async function getAdMetrics(filters?: {
   return (data ?? []) as AdMetricsDaily[];
 }
 
+export async function getCampaignMetricsSummary(campaignIds: string[]): Promise<
+  Record<string, { spend: number; leads: number; costPerLead: number; clicks: number; impressions: number }>
+> {
+  if (campaignIds.length === 0) return {};
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("ad_metrics_daily")
+    .select("campaign_id, spend_kzt, conversions, clicks, impressions")
+    .in("campaign_id", campaignIds);
+  if (error) throw error;
+
+  const map: Record<string, { spend: number; leads: number; costPerLead: number; clicks: number; impressions: number }> = {};
+  for (const row of data ?? []) {
+    const id = row.campaign_id as string;
+    if (!map[id]) map[id] = { spend: 0, leads: 0, costPerLead: 0, clicks: 0, impressions: 0 };
+    map[id].spend += Number(row.spend_kzt) || 0;
+    map[id].leads += Number(row.conversions) || 0;
+    map[id].clicks += Number(row.clicks) || 0;
+    map[id].impressions += Number(row.impressions) || 0;
+  }
+  // Calculate cost per lead
+  for (const v of Object.values(map)) {
+    v.costPerLead = v.leads > 0 ? v.spend / v.leads : 0;
+  }
+  return map;
+}
+
 export async function getAggregatedMetrics(projectId?: string, month?: string) {
   const supabase = createAdminClient();
   const currentMonth = month ?? new Date().toISOString().slice(0, 7);
+  const [y, m] = currentMonth.split("-").map(Number);
+  const lastDay = new Date(y, m, 0).getDate();
   const from = `${currentMonth}-01`;
-  const to = `${currentMonth}-31`;
+  const to = `${currentMonth}-${String(lastDay).padStart(2, "0")}`;
 
   let query = supabase
     .from("ad_metrics_daily")
@@ -514,6 +557,58 @@ export async function getAggregatedMetrics(projectId?: string, month?: string) {
     avgCPC: rows.reduce((s, r) => s + Number(r.cpc_kzt), 0) / rows.length,
     totalReach: rows.reduce((s, r) => s + Number(r.reach), 0),
   };
+}
+
+// ── Ad Platform Connections ──────────────────────────────────────────
+
+export async function getAdPlatformConnections(
+  projectId?: string
+): Promise<AdPlatformConnection[]> {
+  const supabase = createAdminClient();
+  let query = supabase.from("ad_platforms").select("*");
+  if (projectId) query = query.eq("project_id", projectId);
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []) as AdPlatformConnection[];
+}
+
+export async function upsertAdPlatformConnection(
+  projectId: string,
+  platform: "meta" | "google",
+  accountId: string,
+  accountName?: string
+): Promise<AdPlatformConnection> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("ad_platforms")
+    .upsert(
+      {
+        project_id: projectId,
+        platform,
+        account_id: accountId,
+        account_name: accountName ?? null,
+        is_connected: true,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "project_id,platform" }
+    )
+    .select()
+    .single();
+  if (error) throw error;
+  return data as AdPlatformConnection;
+}
+
+export async function disconnectAdPlatform(
+  projectId: string,
+  platform: "meta" | "google"
+) {
+  const supabase = createAdminClient();
+  const { error } = await supabase
+    .from("ad_platforms")
+    .update({ is_connected: false, updated_at: new Date().toISOString() })
+    .eq("project_id", projectId)
+    .eq("platform", platform);
+  if (error) throw error;
 }
 
 // ── Activity Log ────────────────────────────────────────────────────

@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import {
   Shield, ShieldCheck, UserCheck, Eye, Ban, RotateCcw,
-  UserPlus, ChevronDown, ChevronUp, X, FolderKanban, Plus,
+  UserPlus, ChevronDown, ChevronUp, X, FolderKanban, Plus, Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -12,6 +12,7 @@ import {
   inviteUserAction,
   addUserToProjectAction,
   removeUserFromProjectAction,
+  deleteUserAction,
 } from "@/lib/actions";
 import type { Profile, Project, Role } from "@/types/database";
 
@@ -48,6 +49,7 @@ export function TeamList({ profiles, currentUser, memberships: initialMembership
   const [inviteError, setInviteError] = useState("");
   const [inviteSuccess, setInviteSuccess] = useState(false);
   const [addingProjectFor, setAddingProjectFor] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const isAdmin = currentUser.role === "admin";
   const canManage = isAdmin || currentUser.role === "manager";
@@ -126,6 +128,18 @@ export function TeamList({ profiles, currentUser, memberships: initialMembership
       const res = await removeUserFromProjectAction(userId, projectId);
       if (!res.success) {
         setMemberships(initialMemberships);
+        alert(res.error);
+      }
+    });
+  }
+
+  function handleDeleteUser(userId: string) {
+    setUsers((prev) => prev.filter((u) => u.id !== userId));
+    setConfirmDeleteId(null);
+    startTransition(async () => {
+      const res = await deleteUserAction(userId);
+      if (!res.success) {
+        setUsers(profiles);
         alert(res.error);
       }
     });
@@ -310,17 +324,46 @@ export function TeamList({ profiles, currentUser, memberships: initialMembership
                 {/* Actions */}
                 <div className="flex items-center gap-1">
                   {isAdmin && !isSelf && (
-                    <button
-                      onClick={() => handleToggleActive(user.id, !user.is_active)}
-                      disabled={isPending}
-                      className={cn(
-                        "rounded-lg p-2 transition-colors hover:bg-[var(--muted)]",
-                        user.is_active ? "text-red-500" : "text-green-600"
+                    <>
+                      <button
+                        onClick={() => handleToggleActive(user.id, !user.is_active)}
+                        disabled={isPending}
+                        className={cn(
+                          "rounded-lg p-2 transition-colors hover:bg-[var(--muted)]",
+                          user.is_active ? "text-red-500" : "text-green-600"
+                        )}
+                        title={user.is_active ? "Деактивировать" : "Активировать"}
+                      >
+                        {user.is_active ? <Ban className="h-4 w-4" /> : <RotateCcw className="h-4 w-4" />}
+                      </button>
+                      {confirmDeleteId === user.id ? (
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => handleDeleteUser(user.id)}
+                            disabled={isPending}
+                            className="rounded-lg px-2 py-1 text-xs font-medium text-white"
+                            style={{ backgroundColor: "#DC2626" }}
+                          >
+                            Удалить
+                          </button>
+                          <button
+                            onClick={() => setConfirmDeleteId(null)}
+                            className="rounded-lg px-2 py-1 text-xs hover:bg-[var(--muted)]"
+                          >
+                            Отмена
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setConfirmDeleteId(user.id)}
+                          disabled={isPending}
+                          className="rounded-lg p-2 text-[var(--muted-foreground)] transition-colors hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950"
+                          title="Удалить сотрудника"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       )}
-                      title={user.is_active ? "Деактивировать" : "Активировать"}
-                    >
-                      {user.is_active ? <Ban className="h-4 w-4" /> : <RotateCcw className="h-4 w-4" />}
-                    </button>
+                    </>
                   )}
                   <button
                     onClick={() => setExpandedId(isExpanded ? null : user.id)}

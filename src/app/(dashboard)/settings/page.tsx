@@ -38,7 +38,7 @@ const sections = [
     icon: Link2,
     title: "Интеграции",
     description: "Meta Ads, Google Ads, Telegram, Email",
-    href: null,
+    href: "/settings/integrations",
   },
   {
     icon: Database,

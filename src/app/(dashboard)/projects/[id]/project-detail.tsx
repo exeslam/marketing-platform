@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   School,
@@ -20,7 +21,9 @@ import {
   Instagram,
   Facebook,
   Pencil,
+  Trash2,
 } from "lucide-react";
+import { deleteProjectAction } from "@/lib/actions";
 import { cn, formatKZT, getInitials } from "@/lib/utils";
 import type { Project, ProjectMember, BudgetRecord } from "@/types/database";
 
@@ -54,6 +57,24 @@ function ProjectIcon({ type }: { type: string }) {
   return <School className="h-7 w-7" />;
 }
 
+function SettingsTab({ project }: { project: Project }) {
+  return (
+    <div className="rounded-xl bg-[var(--card)] p-6 shadow-sm">
+      <h3 className="mb-1 font-semibold">Редактирование</h3>
+      <p className="mb-4 text-sm text-[var(--muted-foreground)]">
+        Изменить данные проекта
+      </p>
+      <Link
+        href={`/projects/${project.id}/edit`}
+        className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
+      >
+        <Pencil className="h-4 w-4" />
+        Редактировать проект
+      </Link>
+    </div>
+  );
+}
+
 export function ProjectDetail({
   project,
   members,
@@ -65,7 +86,22 @@ export function ProjectDetail({
   budgetRecords: BudgetRecord[];
   currentSpend: number;
 }) {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState("overview");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDelete() {
+    setDeleting(true);
+    const result = await deleteProjectAction(project.id);
+    if (result.success) {
+      router.push("/projects");
+    } else {
+      alert(result.error || "Ошибка удаления");
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
+  }
 
   const budgetPct =
     project.monthly_budget_kzt > 0
@@ -154,6 +190,15 @@ export function ProjectDetail({
               Редактировать
             </Link>
 
+            {/* Delete button */}
+            <button
+              onClick={() => setConfirmDelete(true)}
+              className="flex items-center gap-2 rounded-lg border border-red-300 px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/50"
+            >
+              <Trash2 className="h-4 w-4" />
+              Удалить
+            </button>
+
           {/* Budget indicator */}
           <div className="text-right">
             <p className="text-2xl font-bold">{budgetPct}%</p>
@@ -174,6 +219,33 @@ export function ProjectDetail({
           </div>
         </div>
       </div>
+
+      {/* Delete confirmation */}
+      {confirmDelete && (
+        <div className="mb-4 flex items-center justify-between gap-4 rounded-xl border-2 border-red-500 p-4" style={{ backgroundColor: "#FEF2F2" }}>
+          <p className="text-sm font-medium" style={{ color: "#B91C1C" }}>
+            Удалить проект «{project.name}» и все связанные данные? Это действие необратимо.
+          </p>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-50"
+              style={{ backgroundColor: "#DC2626", color: "#FFFFFF" }}
+            >
+              {deleting ? "Удаление..." : "Да, удалить"}
+            </button>
+            <button
+              onClick={() => setConfirmDelete(false)}
+              disabled={deleting}
+              className="rounded-lg border border-gray-300 px-4 py-2 text-sm"
+              style={{ backgroundColor: "#FFFFFF", color: "#374151" }}
+            >
+              Отмена
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="mb-6 flex gap-1 overflow-x-auto rounded-lg bg-[var(--card)] p-1 shadow-sm">
@@ -377,20 +449,7 @@ export function ProjectDetail({
       )}
 
       {activeTab === "settings" && (
-        <div className="rounded-xl bg-[var(--card)] p-10 text-center shadow-sm">
-          <Settings className="mx-auto mb-3 h-12 w-12 text-[var(--muted-foreground)]" />
-          <h3 className="mb-1 text-lg font-semibold">Настройки проекта</h3>
-          <p className="mb-4 text-sm text-[var(--muted-foreground)]">
-            Редактирование проекта и подключение рекламных кабинетов
-          </p>
-          <Link
-            href={`/projects/${project.id}/edit`}
-            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-dark"
-          >
-            <Pencil className="h-4 w-4" />
-            Редактировать проект
-          </Link>
-        </div>
+        <SettingsTab project={project} />
       )}
     </div>
   );
