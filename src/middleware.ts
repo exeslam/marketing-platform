@@ -1,8 +1,17 @@
-import { type NextRequest } from "next/server";
-import { updateSession } from "@/lib/supabase/middleware";
+import { NextResponse, type NextRequest } from "next/server";
 
 export function middleware(request: NextRequest) {
-  return updateSession(request);
+  const hasAuthCookie = request.cookies
+    .getAll()
+    .some((c) => c.name.includes("-auth-token"));
+
+  if (!hasAuthCookie) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    return NextResponse.redirect(url);
+  }
+
+  return NextResponse.next();
 }
 
 export const config = {
