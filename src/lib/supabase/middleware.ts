@@ -13,14 +13,14 @@ export function updateSession(request: NextRequest) {
     .getAll()
     .some((c) => c.name.includes("-auth-token"));
 
-  // Not logged in → redirect to login (except public routes)
-  if (!hasAuthCookie && pathname !== "/login") {
+  // Not logged in → redirect to login
+  if (!hasAuthCookie) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
   }
 
-  // Logged in → redirect away from login
+  // Logged in user on /login → redirect to dashboard
   if (hasAuthCookie && pathname === "/login") {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
